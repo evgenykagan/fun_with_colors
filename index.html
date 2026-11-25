@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BC-6 Weekly Order</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#14243a;--mute:#5a6777;--line:#d5dce4;--bar:#a9b8c9;--best:#0b6e5f;--bestbg:#e4f3ef;--bad:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#10161e;--card:#1a232e;--ink:#e8edf3;--mute:#9dabbb;--line:#344150;--bar:#55677b;--best:#4cc2ab;--bestbg:#173630;--bad:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1040px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+h1{font-size:1.6rem;margin:0;line-height:1.2}
+h2{font-size:1.1rem;margin:0 0 12px}
+p{margin:0}
+.mute{color:var(--mute)}
+button{font:inherit;padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--ink)}
+:focus-visible{outline:2px solid var(--best);outline-offset:2px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;min-width:0}
+.grid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;margin-bottom:16px}
+.field{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px}
+.field input{width:110px;font:inherit;padding:6px 8px;text-align:right;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+input[aria-invalid=true]{border-color:var(--bad)}
+h3{font-size:.95rem;margin:16px 0 8px}
+.small{font-size:.875rem}
+#error{color:var(--bad);margin:8px 0}
+#answer{background:var(--bestbg);border-radius:8px;padding:14px 16px;margin-bottom:18px}
+#answer strong{display:block;font-size:1.5rem;line-height:1.25;color:var(--best)}
+.row{display:grid;grid-template-columns:90px minmax(0,1fr) 100px;gap:12px;align-items:center;margin-bottom:10px}
+.track{position:relative;height:26px}
+.fill{position:absolute;top:0;height:100%;background:var(--bar);border-radius:3px}
+.zero{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--mute)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.row.best{font-weight:700}.row.best .fill{background:var(--best)}
+.row.best .num{color:var(--best)}
+.scroll{overflow-x:auto}
+svg{display:block;width:100%;min-width:760px;height:auto}
+svg text{fill:var(--ink);font-size:14px}
+svg .m{fill:var(--mute);font-size:12.5px}
+svg path{fill:none;stroke:var(--bar);stroke-width:1.5}
+svg .b{stroke:var(--best);stroke-width:3}
+svg .node{fill:var(--card);stroke:var(--ink);stroke-width:1.5}
+dialog{max-width:600px;width:calc(100% - 32px);border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);padding:24px}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+dialog li{margin-bottom:8px}
+dialog p{margin-bottom:12px}
+.ex{background:var(--bg);border-radius:8px;padding:12px;font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.row{grid-template-columns:76px minmax(0,1fr) 84px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div><h1>BC-6 weekly order</h1><p class="mute">How many cases should you order this week?</p></div>
+  <button id="how" type="button">How it works</button>
+</header>
+
+<div class="grid">
+  <section class="card">
+    <h2>Your numbers</h2>
+    <div class="field"><label for="price">Selling price per case ($)</label><input id="price" inputmode="decimal" autocomplete="off"></div>
+    <div class="field"><label for="cost">Cost per case ($)</label><input id="cost" inputmode="decimal" autocomplete="off"></div>
+    <h3>Probability of demand</h3>
+    <div class="field"><label for="p0">100 cases</label><input id="p0" autocomplete="off"></div>
+    <div class="field"><label for="p1">200 cases</label><input id="p1" autocomplete="off"></div>
+    <div class="field"><label for="p2">300 cases</label><input id="p2" autocomplete="off"></div>
+    <p class="small mute">Enter a fraction (1/3), decimal (0.25) or percent (25%).</p>
+    <p id="error" class="small" role="alert"></p>
+    <p style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button id="scale" type="button" hidden>Scale to total 1</button>
+      <button id="reset" type="button">Reset</button>
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Expected weekly profit</h2>
+    <div id="answer" aria-live="polite"></div>
+    <div id="bars"></div>
+  </section>
+</div>
+
+<section class="card" id="treecard">
+  <h2>Decision tree</h2>
+  <div class="scroll" id="tree" tabindex="0" role="region" aria-label="Decision tree"></div>
+</section>
+</main>
+
+<dialog id="dlg" aria-labelledby="dlgh">
+  <h2 id="dlgh">How it works</h2>
+  <ol>
+    <li>You choose to order 100, 200 or 300 cases before knowing demand.</li>
+    <li>Demand then turns out to be 100, 200 or 300 cases. You sell the smaller of what you ordered and what customers want. Unsold cases are lost, and unmet demand earns nothing.</li>
+    <li>For each combination:<br><b>profit = price × cases sold − cost × cases ordered</b></li>
+    <li>For each order quantity, the three profits are weighted by their probabilities and added. That is the expected profit.</li>
+    <li>The app recommends the order with the highest expected profit.</li>
+  </ol>
+  <div id="example"></div>
+  <p class="small mute">Expected profit is a long-run average. Any single week can come out higher or lower.</p>
+  <button id="close" type="button">Close</button>
+</dialog>
+
+<script>
+const Q=[100,200,300], D=[100,200,300];
+const DEF={price:'100',cost:'25',p0:'1/3',p1:'1/3',p2:'1/3'};
+const $=id=>document.getElementById(id);
+const money=x=>{const r=Math.round(x)||0;return (r<0?'−':'')+'$'+Math.abs(r).toLocaleString('en-US')};
+const unit=x=>'$'+x.toLocaleString('en-US',{maximumFractionDigits:2});
+const pct=x=>(100*x).toFixed(1).replace(/\.0$/,'')+'%';
+const NUM='(?:\\d+\\.?\\d*|\\.\\d+)';
+function parseMoney(s){
+  s=s.trim().replace(/^\$/,'').replace(/,/g,'');
+  return new RegExp('^'+NUM+'$').test(s)?Number(s):NaN;
+}
+function parseProb(s){
+  s=s.trim();
+  const m=s.match(new RegExp('^('+NUM+')\\s*(?:(%)|/\\s*('+NUM+'))?$'));
+  if(!m) return NaN;
+  const v=Number(m[1])/(m[2]?100:m[3]!==undefined?Number(m[3]):1);
+  return Number.isFinite(v)?v:NaN;
+}
+const profit=(q,d,price,cost)=>price*Math.min(q,d)-cost*q;
+
+function update(){
+  const price=parseMoney($('price').value), cost=parseMoney($('cost').value);
+  const p=[0,1,2].map(i=>parseProb($('p'+i).value));
+  const sum=p[0]+p[1]+p[2];
+  const badMoney=[price,cost].some(x=>!Number.isFinite(x));
+  const badP=p.some(x=>!(x>=0&&x<=1));
+  const badSum=!badP&&Math.abs(sum-1)>1e-6;
+  [['price',!Number.isFinite(price)],['cost',!Number.isFinite(cost)],...p.map((x,i)=>['p'+i,!(x>=0&&x<=1)||badSum])]
+    .forEach(([id,bad])=>$(id).setAttribute('aria-invalid',bad));
+  $('scale').hidden=!(badSum&&sum>0);
+  $('error').textContent=badMoney?'Price and cost must be numbers of 0 or more.'
+    :badP?'Each probability must be between 0 and 1.'
+    :badSum?'Probabilities must total 1. They now total '+Number(sum.toFixed(6))+'.':'';
+  const ok=!(badMoney||badP||badSum);
+  $('bars').hidden=$('treecard').hidden=$('example').hidden=!ok;
+  if(!ok){$('answer').textContent='Fix the highlighted inputs to see a recommendation.';return}
+
+  const res=Q.map(q=>{
+    const pay=D.map(d=>profit(q,d,price,cost));
+    return {q,pay,ev:pay.reduce((a,x,i)=>a+x*p[i],0)};
+  });
+  const max=Math.max(...res.map(r=>r.ev));
+  const tol=1e-6*Math.max(1,Math.abs(max));
+  res.forEach(r=>r.best=max-r.ev<=tol);
+  const best=res.filter(r=>r.best).map(r=>r.q);
+  $('answer').innerHTML='<strong>Order '+best.join(' or ')+' cases</strong>Expected profit: '+money(max)+' per week.'
+    +(best.length>1?' These quantities tie.':'')
+    +(max<-tol?' Every option loses money on average at these numbers.':'');
+
+  const lo=Math.min(0,...res.map(r=>r.ev)), hi=Math.max(0,...res.map(r=>r.ev)), span=(hi-lo)||1;
+  const z=(0-lo)/span*100;
+  $('bars').innerHTML=res.map(r=>{
+    const w=Math.abs(r.ev)/span*100, left=r.ev<0?z-w:z;
+    return '<div class="row'+(r.best?' best':'')+'"><span>'+r.q+' cases</span><div class="track" aria-hidden="true"><div class="fill" style="left:'+left+'%;width:'+w+'%"></div><div class="zero" style="left:'+z+'%"></div></div><span class="num">'+money(r.ev)+'</span></div>';
+  }).join('');
+  drawTree(res,p);
+
+  const e=res[2];
+  $('example').innerHTML='<p><b>Example with your numbers: order 300 cases</b></p><p class="ex">'
+    +D.map((d,i)=>'Demand '+d+': '+unit(price)+' × '+Math.min(300,d)+' − '+unit(cost)+' × 300 = '+money(e.pay[i])+' (probability '+pct(p[i])+')').join('<br>')
+    +'<br><b>Expected profit = '+money(e.ev)+'</b></p>';
+}
+
+function drawTree(res,p){
+  let paths='',rest='';
+  const H=400, ry=H/2;
+  res.forEach((r,i)=>{
+    const y=70+i*130, c=r.best?' class="b"':'';
+    paths+='<path'+c+' d="M36 '+ry+' L150 '+y+' H310"/>';
+    rest+='<text x="160" y="'+(y-9)+'"'+(r.best?' font-weight="700"':'')+'>Order '+r.q+(r.best?' ✓':'')+'</text>'
+      +'<text class="m" x="160" y="'+(y+20)+'">Expected '+money(r.ev)+'</text>'
+      +'<circle class="node" cx="322" cy="'+y+'" r="12"/>';
+    D.forEach((d,j)=>{
+      const ly=y+(j-1)*38;
+      paths+='<path d="M334 '+y+' L420 '+ly+' H680"/>';
+      rest+='<text x="428" y="'+(ly-6)+'" class="m">Demand '+d+' · probability '+pct(p[j])+'</text>'
+        +'<text x="690" y="'+(ly+5)+'">'+money(r.pay[j])+'</text>';
+    });
+  });
+  $('tree').innerHTML='<svg viewBox="0 0 800 '+H+'" role="img" aria-label="Each order quantity branches into three demand outcomes with their profits">'
+    +'<text class="m" x="690" y="14">Profit</text>'+paths+'<rect class="node" x="14" y="'+(ry-12)+'" width="24" height="24"/>'+rest+'</svg>';
+}
+
+function reset(){Object.keys(DEF).forEach(k=>$(k).value=DEF[k]);update()}
+Object.keys(DEF).forEach(k=>$(k).addEventListener('input',update));
+$('reset').onclick=reset;
+$('scale').onclick=()=>{
+  const p=[0,1,2].map(i=>parseProb($('p'+i).value)), s=p[0]+p[1]+p[2];
+  p.forEach((x,i)=>$('p'+i).value=String(Number((x/s).toFixed(8))));
+  update();
+};
+$('how').onclick=()=>$('dlg').showModal();
+$('close').onclick=()=>$('dlg').close();
+reset();
+</script>
+</body>
+</html>

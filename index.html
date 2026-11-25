@@ -63,6 +63,8 @@ dialog p{margin-bottom:12px}
     <h2>Your numbers</h2>
     <div class="field"><label for="price">Selling price per case ($)</label><input id="price" inputmode="decimal" autocomplete="off"></div>
     <div class="field"><label for="cost">Cost per case ($)</label><input id="cost" inputmode="decimal" autocomplete="off"></div>
+    <div class="field"><label for="salvage">Salvage value per unsold case ($)</label><input id="salvage" autocomplete="off" aria-describedby="salvhint"></div>
+    <p class="small mute" id="salvhint">What you get back for each unsold case. Use a negative number if you pay to dispose of it.</p>
     <h3>Probability of demand</h3>
     <div class="field"><label for="p0">100 cases</label><input id="p0" autocomplete="off"></div>
     <div class="field"><label for="p1">200 cases</label><input id="p1" autocomplete="off"></div>
@@ -92,8 +94,8 @@ dialog p{margin-bottom:12px}
   <h2 id="dlgh">How it works</h2>
   <ol>
     <li>You choose to order 100, 200 or 300 cases before knowing demand.</li>
-    <li>Demand then turns out to be 100, 200 or 300 cases. You sell the smaller of what you ordered and what customers want. Unsold cases are lost, and unmet demand earns nothing.</li>
-    <li>For each combination:<br><b>profit = price × cases sold − cost × cases ordered</b></li>
+    <li>Demand then turns out to be 100, 200 or 300 cases. You sell the smaller of what you ordered and what customers want. Each unsold case returns its salvage value (a negative value is a disposal cost). Unmet demand earns nothing.</li>
+    <li>For each combination:<br><b>profit = price × cases sold + salvage value × cases unsold − cost × cases ordered</b></li>
     <li>For each order quantity, the three profits are weighted by their probabilities and added. That is the expected profit.</li>
     <li>The app recommends the order with the highest expected profit.</li>
   </ol>
@@ -104,15 +106,19 @@ dialog p{margin-bottom:12px}
 
 <script>
 const Q=[100,200,300], D=[100,200,300];
-const DEF={price:'100',cost:'25',p0:'1/3',p1:'1/3',p2:'1/3'};
+const DEF={price:'100',cost:'25',salvage:'10',p0:'1/3',p1:'1/3',p2:'1/3'};
 const $=id=>document.getElementById(id);
 const money=x=>{const r=Math.round(x)||0;return (r<0?'−':'')+'$'+Math.abs(r).toLocaleString('en-US')};
-const unit=x=>'$'+x.toLocaleString('en-US',{maximumFractionDigits:2});
+const unit=x=>(x<0?'−':'')+'$'+Math.abs(x).toLocaleString('en-US',{maximumFractionDigits:2});
 const pct=x=>(100*x).toFixed(1).replace(/\.0$/,'')+'%';
 const NUM='(?:\\d+\\.?\\d*|\\.\\d+)';
 function parseMoney(s){
   s=s.trim().replace(/^\$/,'').replace(/,/g,'');
   return new RegExp('^'+NUM+'$').test(s)?Number(s):NaN;
+}
+function parseSigned(s){
+  s=s.trim();
+  return /^[-−]/.test(s)?-parseMoney(s.slice(1)):parseMoney(s);
 }
 function parseProb(s){
   s=s.trim();
@@ -121,19 +127,19 @@ function parseProb(s){
   const v=Number(m[1])/(m[2]?100:m[3]!==undefined?Number(m[3]):1);
   return Number.isFinite(v)?v:NaN;
 }
-const profit=(q,d,price,cost)=>price*Math.min(q,d)-cost*q;
+const profit=(q,d,price,cost,salvage)=>price*Math.min(q,d)+salvage*Math.max(q-d,0)-cost*q;
 
 function update(){
-  const price=parseMoney($('price').value), cost=parseMoney($('cost').value);
+  const price=parseMoney($('price').value), cost=parseMoney($('cost').value), salvage=parseSigned($('salvage').value);
   const p=[0,1,2].map(i=>parseProb($('p'+i).value));
   const sum=p[0]+p[1]+p[2];
-  const badMoney=[price,cost].some(x=>!Number.isFinite(x));
+  const badMoney=[price,cost,salvage].some(x=>!Number.isFinite(x));
   const badP=p.some(x=>!(x>=0&&x<=1));
   const badSum=!badP&&Math.abs(sum-1)>1e-6;
-  [['price',!Number.isFinite(price)],['cost',!Number.isFinite(cost)],...p.map((x,i)=>['p'+i,!(x>=0&&x<=1)||badSum])]
+  [['price',!Number.isFinite(price)],['cost',!Number.isFinite(cost)],['salvage',!Number.isFinite(salvage)],...p.map((x,i)=>['p'+i,!(x>=0&&x<=1)||badSum])]
     .forEach(([id,bad])=>$(id).setAttribute('aria-invalid',bad));
   $('scale').hidden=!(badSum&&sum>0);
-  $('error').textContent=badMoney?'Price and cost must be numbers of 0 or more.'
+  $('error').textContent=badMoney?'Price and cost must be numbers of 0 or more, and salvage value must be a number.'
     :badP?'Each probability must be between 0 and 1.'
     :badSum?'Probabilities must total 1. They now total '+Number(sum.toFixed(6))+'.':'';
   const ok=!(badMoney||badP||badSum);
@@ -141,7 +147,7 @@ function update(){
   if(!ok){$('answer').textContent='Fix the highlighted inputs to see a recommendation.';return}
 
   const res=Q.map(q=>{
-    const pay=D.map(d=>profit(q,d,price,cost));
+    const pay=D.map(d=>profit(q,d,price,cost,salvage));
     return {q,pay,ev:pay.reduce((a,x,i)=>a+x*p[i],0)};
   });
   const max=Math.max(...res.map(r=>r.ev));
@@ -162,7 +168,7 @@ function update(){
 
   const e=res[2];
   $('example').innerHTML='<p><b>Example with your numbers: order 300 cases</b></p><p class="ex">'
-    +D.map((d,i)=>'Demand '+d+': '+unit(price)+' × '+Math.min(300,d)+' − '+unit(cost)+' × 300 = '+money(e.pay[i])+' (probability '+pct(p[i])+')').join('<br>')
+    +D.map((d,i)=>'Demand '+d+': '+unit(price)+' × '+Math.min(300,d)+' + '+unit(salvage)+' × '+Math.max(300-d,0)+' − '+unit(cost)+' × 300 = '+money(e.pay[i])+' (probability '+pct(p[i])+')').join('<br>')
     +'<br><b>Expected profit = '+money(e.ev)+'</b></p>';
 }
 
